@@ -11,15 +11,15 @@ import matplotlib.pyplot as plt
 #====================================
 # Setup some parameters
 #====================================
-flow_data = 'flows_1990'
+#flow_data = 'flows_1990'
 #flow_data = 'flows_2020'
-#flow_data = 'flows_1989'
+flow_data = 'flows_1989'
 
 max_area = 10000
 #max_area = 40000
 
 
-show_plots = False
+show_plots = True
 print_inlet_data = False
 calc_elevation = False
 dam_height = 40.0
@@ -290,7 +290,7 @@ for key, value in station_data.items():
 
         if anuga.myid == 0 and show_plots:
             t = numpy.linspace(start_time-3600*24,start_time+3600*24*10, 1000)
-            q = -outflow_Q_fun(t)
+            q = Q_outflow(t)
             plt.figure(1)
             plt.plot(t,q)
             plt.xlabel('Time (s)')
@@ -329,9 +329,9 @@ gauge_points = [[248288, 6251012.0],
                 [277487, 6248067]]
 
 if anuga.myid == 0:
-    print(72*"=")
-    print("Gauge_IDs")
-    print(72*"=", flush=True)
+    print(80*"=")
+    print("Gauge IDs")
+    print(80*"=", flush=True)
 
 anuga.barrier()
 
@@ -342,7 +342,7 @@ for i, gauge_point in enumerate(gauge_points):
         gauge_tid = domain.get_triangle_containing_point(gauge_point)
         gauge_tids.append(gauge_tid)
         gauge_ids.append(i)
-        print(i,'-th gauge point ', gauge_point, ' found in triangle ', gauge_tid, ' on process ', anuga.myid)
+        print(str(i)+'-th gauge point ', gauge_point, ' found in triangle ', gauge_tid, ' on process ', anuga.myid)
     except: 
         pass
         #print('couldnt find ', gauge_point, ' on proc ', anuga.myid)
