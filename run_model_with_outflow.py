@@ -11,15 +11,15 @@ import matplotlib.pyplot as plt
 #====================================
 # Setup some parameters
 #====================================
-#flow_data = 'flows_1990'
-#flow_data = 'flows_2020'
-flow_data = 'flows_1989'
+flow_data = 'flows_1990'
+#flow_data = 'flows_2021'
+#flow_data = 'flows_1989'
 
 max_area = 10000
 #max_area = 40000
 
 
-show_plots = True
+show_plots = False
 print_inlet_data = False
 calc_elevation = False
 dam_height = 40.0
@@ -376,6 +376,10 @@ Stage_c = domain.quantities['stage'].centroid_values
 # set an earlier time if you want to have a "burn in" period
 domain.set_starttime(start_time)
 
+import datetime
+data_time_base = datetime.datetime(1900, 1, 1)
+linux_time_base = datetime.datetime(1970, 1, 1)
+
 initial_water_volume = domain.get_water_volume()
 
 import sys
@@ -385,7 +389,13 @@ for t in domain.evolve(yieldstep=10*min, duration=10*day):
         print()
         print(80*"=")
         domain.print_timestepping_statistics(time_unit='day')
-        print('Evolution Time: ',domain.relative_time, '(s)')
+
+        absolute_time = domain.get_time()
+        absolute_time_utc = datetime.datetime.utcfromtimestamp(absolute_time)
+        absolute_time_utc = absolute_time_utc - linux_time_base + data_time_base
+
+        print('Date and Time : ', absolute_time_utc.strftime('%c'))
+        print('Evolution Time: ', domain.relative_time, '(s)')
         print(80*"=", flush=True)
 
     #anuga.barrier()
