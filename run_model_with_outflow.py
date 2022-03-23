@@ -235,7 +235,7 @@ for key, value in station_data.items():
         station_filename = 'data/'+flow_data+'/'+value[0]
 
         df = pandas.read_excel(station_filename)
-        df['Time'] = df['Time'] - df['Time'][0]
+        #df['Time'] = df['Time'] - df['Time'][0]
 
         station_time = numpy.array(df['Time'])*3600*24    # convert from day to seconds
         start_time = min(station_time[0], start_time)
@@ -275,7 +275,7 @@ for key, value in station_data.items():
         station_filename = 'data/'+flow_data+'/'+value[0]
 
         df = pandas.read_excel(station_filename)
-        df['Time'] = df['Time'] - df['Time'][0]
+        #df['Time'] = df['Time'] - df['Time'][0]
         station_time = numpy.array(df['Time'])*3600*24    # convert from day to seconds
         start_time = min(station_time[0], start_time)
 
@@ -372,7 +372,8 @@ sec = 1
 
 Stage_c = domain.quantities['stage'].centroid_values
 
-# Set a negative starttime to allow a burn in phase
+# start_time is set to the earliest time in the flow data files.
+# set an earlier time if you want to have a "burn in" period
 domain.set_starttime(start_time)
 
 initial_water_volume = domain.get_water_volume()
@@ -384,6 +385,7 @@ for t in domain.evolve(yieldstep=10*min, duration=10*day):
         print()
         print(80*"=")
         domain.print_timestepping_statistics(time_unit='day')
+        print('Evolution Time: ',domain.relative_time, '(s)')
         print(80*"=", flush=True)
 
     #anuga.barrier()
