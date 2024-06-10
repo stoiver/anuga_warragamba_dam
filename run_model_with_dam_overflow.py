@@ -2,28 +2,45 @@
 Script to run Warragamba Dam simulation
 """
 
+from xml import dom
 import anuga
 import numpy
 import pandas
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+day = 24*3600
+hr = 3600
+minute = 60
+sec = 1
+
 #====================================
 # Setup some parameters
 #====================================
-#flow_data = 'flows_1990'
-flow_data = 'flows_2021'
-#flow_data = 'flows_1989'
+params = {}
 
-max_area = 10000
-#max_area = 40000
+params['flow_data'] = 'flows_1990' #'flows_2021' 'flows_1990' 'flows_1989'
+params['dam_height'] = 116.
+params['reservoir_stage'] = 115.831
+params['max_area'] = 40000 # 40000 10000
+params['yieldstep'] = 10*minute
+params['duration']  = 5*day # 20*minute # 10*day #flow_2021  5*day # flow_1990
+params['Qfactor'] = 2.5
 
+
+
+flow_data = params['flow_data']
+dam_height = params['dam_height']
+reservoir_stage = params['reservoir_stage']
+max_area = params['max_area']
+yieldstep = params['yieldstep']
+duration = params['duration']
+Qfactor = params['Qfactor']
 
 show_plots = False
 print_inlet_data = False
 calc_elevation = False
-dam_height = 116.0
-reservoir_stage = 115.831
+
 
 #====================================
 # Set up the domain
@@ -41,7 +58,8 @@ riverwalls = {'dam_wall' : dam_wall_riverwall}
 
 
 boundary_poly = numpy.loadtxt('data/boundary_poly.csv', delimiter=',')
-boundary_tags={'Dam':  [i for i in range(754,760)]}
+len_bound = len(boundary_poly)
+boundary_tags={'Outflow':  list(range(754,760)), 'exterior' : list(range(754)) + list(range(760,len_bound)) }
 
 below_dam_polygon = dam_wall_polyline + [boundary_poly[i] for i in range(760,753, -1)]
 
@@ -189,7 +207,7 @@ if anuga.myid == 0:
         plt.colorbar()
         plt.show()
 
-    domain.set_quantity('friction', 0.03)
+    domain.set_quantity('friction', 0.015)
 
     print(numpy.max(Elev.centroid_values))
     print(numpy.min(Elev.centroid_values))
@@ -220,6 +238,20 @@ import utm
 
 flow_operators = []
 
+#================================
+# The station time is based on
+# a time base of 1900/1/1 == time 1 day
+# We will convert to one based on 
+# unix timestamp (1970/1/1)
+#================================
+from datetime import datetime
+from zoneinfo import ZoneInfo
+UTC = ZoneInfo('UTC')
+AEST = ZoneInfo('Australia/Sydney')
+data_time_base = datetime(1899, 12, 30, tzinfo=AEST)
+data_base_timestamp = data_time_base.timestamp()
+
+
 start_time = 1.0e100
 
 for key, value in station_data.items():
@@ -237,7 +269,8 @@ for key, value in station_data.items():
         df = pandas.read_excel(station_filename)
         #df['Time'] = df['Time'] - df['Time'][0]
 
-        station_time = numpy.array(df['Time'])*3600*24    # convert from day to seconds
+        station_time = numpy.array(df['Time'])*3600*24    # convert from day to seconds from 1/1/1900 UTC
+        station_time = station_time + data_base_timestamp # convert to seconds from 1/1/1970 UTC
         start_time = min(station_time[0], start_time)
 
         if anuga.myid ==0: print(numpy.max(station_time))
@@ -273,14 +306,15 @@ for key, value in station_data.items():
 Br = anuga.Reflective_boundary(domain)
 Bd = anuga.Dirichlet_boundary([40.0, 0.0,0.0])
 
-domain.set_boundary({'exterior': Br, 'Dam' : Bd})
+domain.set_boundary({'exterior': Br, 'Outflow' : Bd})
 
 #===================================
 # Setup Dam via riverwall
 #===================================
-domain.riverwallData.create_riverwalls(riverwalls, verbose=True)
+riverwallPar = {'dam_wall': {'Qfactor':Qfactor} }
+domain.riverwallData.create_riverwalls(riverwalls, riverwallPar= riverwallPar, verbose=True)
 
-
+print(80*"=", flush=True)
 anuga.barrier()
 #===================================
 # Setup gauge Points
@@ -288,7 +322,7 @@ anuga.barrier()
 gauge_points = [[248288, 6251012.0],
                 [254752, 6219030],
                 [267288, 6239628],
-                [277487, 6248067]]
+                [277600, 6248200]]
 
 if anuga.myid == 0:
     print(80*"=")
@@ -305,6 +339,7 @@ for i, gauge_point in enumerate(gauge_points):
         gauge_tids.append(gauge_tid)
         gauge_ids.append(i)
         print(str(i)+'-th gauge point ', gauge_point, ' found in triangle ', gauge_tid, ' on process ', anuga.myid)
+        print(80*"=", flush=True)
     except: 
         pass
         #print('couldnt find ', gauge_point, ' on proc ', anuga.myid)
@@ -325,40 +360,57 @@ anuga.barrier()
 
 if anuga.myid == 0:
     print(gauge_processes)
+    print(80*"=", flush=True)
+    
 
 
-day = 24*3600
-hr = 3600
-min = 60
-sec = 1
+
 
 Stage_c = domain.quantities['stage'].centroid_values
-
-# start_time is set to the earliest time in the flow data files.
-# set an earlier time if you want to have a "burn in" period
-domain.set_starttime(start_time)
 
 initial_water_volume = domain.get_water_volume()
 
 import sys
 
-import datetime
-data_time_base = datetime.datetime(1900, 1, 1)
-linux_time_base = datetime.datetime(1970, 1, 1)
+#================================
+# Setup domain tz and starttime
+#================================
+#AEST = pytz.timezone('Australia/Sydney')
+#domain.set_timezone(AEST)
 
-print(data_time_base, linux_time_base)
+# start_time is set to the earliest time in the flow data files.
+# set an earlier time if you want to have a "burn in" period
 
-for t in domain.evolve(yieldstep=10*min, duration=10*day):
+domain.set_timezone(AEST)
+domain.set_starttime(start_time)
+
+if anuga.myid ==0: 
+    print()
+    print(80*"=")
+    print('Starttime:', domain.get_datetime())
+    print(80*"=")
+    print(80*"=", flush=True)
+
+
+if anuga.myid == 0:
+    import json
+    with open(domain.get_global_name()+'_params.json', 'w') as params_file:
+        json.dump(params, params_file)
+
+
+outflow = []
+
+#===============================
+# Evolve Loop
+#===============================
+for t in domain.evolve(yieldstep=yieldstep, duration=duration):
     if anuga.myid ==0: 
         print()
         print(80*"=")
         domain.print_timestepping_statistics(time_unit='day')
 
-        absolute_time = domain.get_time()
-        absolute_time_utc = datetime.datetime.utcfromtimestamp(absolute_time)
-        absolute_time_utc = absolute_time_utc - linux_time_base + data_time_base
-
-        print('Date and Time : ', absolute_time_utc.strftime('%c'))
+        print('Date and Time : ', domain.get_datetime(), 'TZ', domain.get_timezone())
+        print('Absolute Time : ', domain.get_time())
         print('Evolution Time: ', domain.relative_time, '(s)')
         print(80*"=", flush=True)
 
@@ -420,6 +472,7 @@ for t in domain.evolve(yieldstep=10*min, duration=10*day):
         print(50*'-')
         print(gauge_output)
         print(' ')
+        print(80*"=", flush=True)
             
 
 
@@ -431,11 +484,33 @@ for t in domain.evolve(yieldstep=10*min, duration=10*day):
 
     if anuga.myid == 0: 
         print(50*'-')
-        print('Flow Statisitics')
+        print('Flow Statistics')
         print(50*'-')
         print('Domain water volume (m^3):    ', water_volume)
         print('Boundary flux integral (m^3): ', boundary_flux)
         print('Water volume added (m^3):     ', water_volume_added)
         print('Total inflow volume (m^3):    ', total_inflow)
         print('Initial Volume + Total inflow + Boundary flux - Domain volume (m^3): ', check)
+        print(80*"=", flush=True)
 
+    if anuga.myid == 0:
+        outflow.append([domain.get_time(),
+                        water_volume, 
+                        boundary_flux, 
+                        water_volume_added, 
+                        total_inflow,
+                        gauge_output[0],
+                        gauge_output[1],
+                        gauge_output[2],
+                        gauge_output[3]])
+
+
+if anuga.myid == 0:
+    outflow = numpy.array(outflow)
+
+    df = pandas.DataFrame(outflow)
+    df.to_csv(domain.get_global_name()+'_outflow.csv',
+              header=['time', 'water_volume', 'boundary_flux', 'water_volume_added', 'total_inflow', 'g0', 'g1', 'g2', 'g3'])
+
+
+domain.sww_merge(delete_old=True)
